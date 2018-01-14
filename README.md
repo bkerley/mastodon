@@ -1,3 +1,13 @@
+# bryce's ruby 2.5 demo using mastodon
+
+i'm doing a presentation on ruby 2.5 literally tomorrow (gg procrastination) and
+wanted to demo ruby 2.5 on working code
+
+you probably don't want to just jump in and use this but you do you :)
+
+hmu @ [@bonzoesc@m.bonzoesc.net](https://m.bonzoesc.net/@bonzoesc) if you
+have questions (you probably do! and that's okay)
+
 ![Mastodon](https://i.imgur.com/NhZc40l.png)
 ========
 
