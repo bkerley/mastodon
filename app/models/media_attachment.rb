@@ -160,18 +160,16 @@ class MediaAttachment < ApplicationRecord
     meta = {}
 
     file.queued_for_write.each do |style, file|
-      begin
-        geo = Paperclip::Geometry.from_file file
+      geo = Paperclip::Geometry.from_file file
 
-        meta[style] = {
-          width: geo.width.to_i,
-          height: geo.height.to_i,
-          size: "#{geo.width.to_i}x#{geo.height.to_i}",
-          aspect: geo.width.to_f / geo.height.to_f,
-        }
-      rescue Paperclip::Errors::NotIdentifiedByImageMagickError
-        meta[style] = {}
-      end
+      meta[style] = {
+        width: geo.width.to_i,
+        height: geo.height.to_i,
+        size: "#{geo.width.to_i}x#{geo.height.to_i}",
+        aspect: geo.width.to_f / geo.height.to_f,
+      }
+    rescue Paperclip::Errors::NotIdentifiedByImageMagickError
+      meta[style] = {}
     end
 
     meta
