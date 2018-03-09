@@ -6,6 +6,9 @@ services:
     image: abiosoft/caddy:0.10.10
     depends_on:
       - web
+    networks:
+      - external_network
+      - internal_network
     volumes:
       - ./caddy:/root/.caddy
       - ./Caddyfile:/etc/Caddyfile
@@ -49,7 +52,6 @@ services:
     env_file: .env.production
     command: bundle exec rails s -p 3000 -b '0.0.0.0'
     networks:
-      - external_network
       - internal_network
     ports:
       - "3000:3000"
