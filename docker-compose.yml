@@ -1,19 +1,31 @@
 version: '3'
 services:
 
+  frontend:
+    restart: always
+    image: abiosoft/caddy:0.10.10
+    depends_on:
+      - web
+    volumes:
+      - ./caddy:/root/.caddy
+      - ./Caddyfile:/etc/Caddyfile
+    ports:
+      - "443:443"
+
   db:
     restart: always
     image: postgres:9.6-alpine
 ### Uncomment to enable DB persistance
-#    volumes:
-#      - ./postgres:/var/lib/postgresql/data
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+      - ./tmp:/tmp/mastodon
 
   redis:
     restart: always
     image: redis:4.0-alpine
 ### Uncomment to enable REDIS persistance
-#    volumes:
-#      - ./redis:/data
+    volumes:
+      - ./redis:/data
 
   web:
     build: .

@@ -1,0 +1,14 @@
+https://mssh.bonzoesc.net {
+  proxy / web:3000 {
+    transparent
+    websocket
+  }
+}
+
+https://m.bonzoesc.net {
+  proxy / web:3000 {
+    transparent
+    websocket
+  }
+  tls self_signed
+}
