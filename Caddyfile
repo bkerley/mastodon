@@ -1,4 +1,9 @@
 https://mssh.bonzoesc.net {
+  proxy /api/v1/streaming streaming:4000 {
+    transparent
+    websocket
+  }
+
   proxy / web:3000 {
     transparent
     websocket
@@ -6,6 +11,11 @@ https://mssh.bonzoesc.net {
 }
 
 https://m.bonzoesc.net {
+  proxy /api/v1/streaming streaming:4000 {
+    transparent
+    websocket
+  }
+
   proxy / web:3000 {
     transparent
     websocket
