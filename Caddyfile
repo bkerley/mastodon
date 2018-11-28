@@ -1,4 +1,4 @@
-https://mssh.bonzoesc.net {
+https://mas2don.bonzoesc.net {
   proxy /api/v1/streaming streaming:4000 {
     transparent
     websocket
