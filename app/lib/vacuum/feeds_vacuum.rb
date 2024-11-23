@@ -4,6 +4,7 @@ class Vacuum::FeedsVacuum
   def perform
     vacuum_inactive_home_feeds!
     vacuum_inactive_list_feeds!
+    vacuum_inactive_direct_feeds!
   end
 
   private
@@ -20,8 +21,14 @@ class Vacuum::FeedsVacuum
     end
   end
 
+  def vacuum_inactive_direct_feeds!
+    inactive_users_lists.select(:id).find_in_batches do |lists|
+      feed_manager.clean_feeds!(:direct, lists.map(&:id))
+    end
+  end
+
   def inactive_users
-    User.confirmed.inactive
+    User.confirmed.not_signed_in_recently
   end
 
   def inactive_users_lists

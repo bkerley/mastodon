@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'rails_helper'
-require 'pundit/rspec'
 
 RSpec.describe StatusPolicy, type: :model do
   subject { described_class }
@@ -82,6 +81,18 @@ RSpec.describe StatusPolicy, type: :model do
         viewer = Fabricate(:account)
         status.visibility = :private
 
+        expect(subject).to_not permit(viewer, status)
+      end
+
+      it 'denies access when local-only and the viewer is not logged in' do
+        allow(status).to receive(:local_only?).and_return(true)
+
+        expect(subject).to_not permit(nil, status)
+      end
+
+      it 'denies access when local-only and the viewer is from another domain' do
+        viewer = Fabricate(:account, domain: 'remote-domain')
+        allow(status).to receive(:local_only?).and_return(true)
         expect(subject).to_not permit(viewer, status)
       end
     end

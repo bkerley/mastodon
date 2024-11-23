@@ -9,11 +9,11 @@ module Mastodon
     end
 
     def minor
-      2
+      3
     end
 
     def patch
-      10
+      1
     end
 
     def default_prerelease
@@ -25,7 +25,7 @@ module Mastodon
     end
 
     def build_metadata
-      ENV.fetch('MASTODON_VERSION_METADATA', nil)
+      ['glitch', ENV.fetch('MASTODON_VERSION_METADATA', nil)].compact_blank.join('.')
     end
 
     def to_a
@@ -43,8 +43,14 @@ module Mastodon
       @gem_version ||= Gem::Version.new(to_s.split('+')[0])
     end
 
+    def api_versions
+      {
+        mastodon: 2,
+      }
+    end
+
     def repository
-      ENV.fetch('GITHUB_REPOSITORY', 'mastodon/mastodon')
+      ENV.fetch('GITHUB_REPOSITORY', 'glitch-soc/mastodon')
     end
 
     def source_base_url
@@ -65,7 +71,7 @@ module Mastodon
     end
 
     def user_agent
-      @user_agent ||= "#{HTTP::Request::USER_AGENT} (Mastodon/#{Version}; +http#{Rails.configuration.x.use_https ? 's' : ''}://#{Rails.configuration.x.web_domain}/)"
+      @user_agent ||= "Mastodon/#{Version} (#{HTTP::Request::USER_AGENT}; +http#{Rails.configuration.x.use_https ? 's' : ''}://#{Rails.configuration.x.web_domain}/)"
     end
   end
 end

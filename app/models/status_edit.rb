@@ -11,6 +11,7 @@
 #  spoiler_text                 :text             default(""), not null
 #  created_at                   :datetime         not null
 #  updated_at                   :datetime         not null
+#  content_type                 :string
 #  ordered_media_attachment_ids :bigint(8)        is an Array
 #  media_descriptions           :text             is an Array
 #  poll_options                 :string           is an Array
@@ -39,7 +40,7 @@ class StatusEdit < ApplicationRecord
   belongs_to :status
   belongs_to :account, optional: true
 
-  default_scope { order(id: :asc) }
+  scope :ordered, -> { order(id: :asc) }
 
   delegate :local?, :application, :edited?, :edited_at,
            :discarded?, :visibility, :language, to: :status
@@ -53,12 +54,14 @@ class StatusEdit < ApplicationRecord
   def ordered_media_attachments
     return @ordered_media_attachments if defined?(@ordered_media_attachments)
 
-    @ordered_media_attachments = if ordered_media_attachment_ids.nil?
-                                   []
-                                 else
-                                   map = status.media_attachments.index_by(&:id)
-                                   ordered_media_attachment_ids.map.with_index { |media_attachment_id, index| PreservedMediaAttachment.new(media_attachment: map[media_attachment_id], description: media_descriptions[index]) }
-                                 end
+    @ordered_media_attachments = begin
+      if ordered_media_attachment_ids.nil?
+        []
+      else
+        map = status.media_attachments.index_by(&:id)
+        ordered_media_attachment_ids.map.with_index { |media_attachment_id, index| PreservedMediaAttachment.new(media_attachment: map[media_attachment_id], description: media_descriptions[index]) }
+      end
+    end.take(Status::MEDIA_ATTACHMENTS_LIMIT)
   end
 
   def proper

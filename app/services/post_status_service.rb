@@ -61,9 +61,25 @@ class PostStatusService < BaseService
 
   private
 
+  def fill_blank_text!
+    return unless @text.blank? && @options[:spoiler_text].present?
+
+    @text = begin
+      if @media&.any?(&:video?) || @media&.any?(&:gifv?)
+        '📹'
+      elsif @media&.any?(&:audio?)
+        '🎵'
+      elsif @media&.any?(&:image?)
+        '🖼'
+      else
+        '.'
+      end
+    end
+  end
+
   def preprocess_attributes!
+    fill_blank_text!
     @sensitive    = (@options[:sensitive].nil? ? @account.user&.setting_default_sensitive : @options[:sensitive]) || @options[:spoiler_text].present?
-    @text         = @options.delete(:spoiler_text) if @text.blank? && @options[:spoiler_text].present?
     @visibility   = @options[:visibility] || @account.user&.setting_default_privacy
     @visibility   = :unlisted if @visibility&.to_sym == :public && @account.silenced?
     @scheduled_at = @options[:scheduled_at]&.to_datetime
@@ -120,7 +136,7 @@ class PostStatusService < BaseService
     Trends.tags.register(@status)
     LinkCrawlWorker.perform_async(@status.id)
     DistributionWorker.perform_async(@status.id)
-    ActivityPub::DistributionWorker.perform_async(@status.id)
+    ActivityPub::DistributionWorker.perform_async(@status.id) unless @status.local_only?
     PollExpirationNotifyWorker.perform_at(@status.poll.expires_at, @status.poll.id) if @status.poll
   end
 
@@ -130,9 +146,12 @@ class PostStatusService < BaseService
       return
     end
 
-    raise Mastodon::ValidationError, I18n.t('media_attachments.validations.too_many') if @options[:media_ids].size > 4 || @options[:poll].present?
+    raise Mastodon::ValidationError, I18n.t('media_attachments.validations.too_many') if @options[:media_ids].size > Status::MEDIA_ATTACHMENTS_LIMIT || @options[:poll].present?
 
-    @media = @account.media_attachments.where(status_id: nil).where(id: @options[:media_ids].take(4).map(&:to_i))
+    @media = @account.media_attachments.where(status_id: nil).where(id: @options[:media_ids].take(Status::MEDIA_ATTACHMENTS_LIMIT).map(&:to_i))
+
+    not_found_ids = @options[:media_ids].map(&:to_i) - @media.map(&:id)
+    raise Mastodon::ValidationError, I18n.t('media_attachments.validations.not_found', ids: not_found_ids.join(', ')) if not_found_ids.any?
 
     raise Mastodon::ValidationError, I18n.t('media_attachments.validations.images_and_video') if @media.size > 1 && @media.find(&:audio_or_video?)
     raise Mastodon::ValidationError, I18n.t('media_attachments.validations.not_ready') if @media.any?(&:not_processed?)
@@ -178,9 +197,6 @@ class PostStatusService < BaseService
     return if !@status.reply? || @account.id == @status.in_reply_to_account_id
 
     ActivityTracker.increment('activity:interactions')
-    return if @account.following?(@status.in_reply_to_account_id)
-
-    PotentialFriendshipTracker.record(@account.id, @status.in_reply_to_account_id, :reply)
   end
 
   def status_attributes
@@ -195,6 +211,7 @@ class PostStatusService < BaseService
       visibility: @visibility,
       language: valid_locale_cascade(@options[:language], @account.user&.preferred_posting_language, I18n.default_locale),
       application: @options[:application],
+      content_type: @options[:content_type] || @account.user&.setting_default_content_type,
       rate_limit: @options[:with_rate_limit],
     }.compact
   end
