@@ -317,8 +317,6 @@ module Mastodon::CLI
           user.update!(email: "#{index} " + user.email)
         end
       end
-
-      ActiveRecord::Base.connection.execute('REINDEX INDEX index_users_on_unconfirmed_email;') if ActiveRecord::Migrator.current_version >= 2023_07_02_151753
     end
 
     def deduplicate_users_process_confirmation_token

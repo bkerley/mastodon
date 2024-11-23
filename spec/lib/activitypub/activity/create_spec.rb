@@ -193,7 +193,6 @@ RSpec.describe ActivityPub::Activity::Create do
             published: '10000-11-03T08:31:22Z',
           }
         end
-      end
 
         it 'creates status with a valid creation date', :aggregate_failures do
           status = sender.statuses.first
