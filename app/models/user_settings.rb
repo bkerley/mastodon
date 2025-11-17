@@ -18,6 +18,7 @@ class UserSettings
   setting :default_privacy, default: nil, in: %w(public unlisted private)
   setting :default_content_type, default: 'text/plain'
   setting :hide_followers_count, default: false
+  setting :default_quote_policy, default: 'public', in: %w(public followers nobody)
 
   setting_inverse_alias :indexable, :noindex
   setting_inverse_alias :show_followers_count, :hide_followers_count
@@ -28,16 +29,19 @@ class UserSettings
     setting :use_blurhash, default: true
     setting :use_pending_items, default: false
     setting :use_system_font, default: false
+    setting :use_system_scrollbars, default: false
     setting :disable_swiping, default: false
     setting :disable_hover_cards, default: false
     setting :delete_modal, default: true
     setting :reblog_modal, default: false
     setting :favourite_modal, default: false
+    setting :quick_boosting, default: false
+    setting :missing_alt_text_modal, default: true
     setting :reduce_motion, default: false
     setting :expand_content_warnings, default: false
     setting :display_media, default: 'default', in: %w(default show_all hide_all)
     setting :auto_play, default: false
-    setting :use_system_emoji_font, default: false
+    setting :emoji_style, default: 'auto', in: %w(auto native twemoji)
   end
 
   namespace :notification_emails do
@@ -45,6 +49,7 @@ class UserSettings
     setting :reblog, default: false
     setting :favourite, default: false
     setting :mention, default: true
+    setting :quote, default: true
     setting :follow_request, default: true
     setting :report, default: true
     setting :pending_account, default: true

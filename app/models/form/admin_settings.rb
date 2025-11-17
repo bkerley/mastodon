@@ -14,7 +14,6 @@ class Form::AdminSettings
     site_terms
     registrations_mode
     closed_registrations_message
-    timeline_preview
     bootstrap_timeline_accounts
     flavour
     skin
@@ -30,11 +29,11 @@ class Form::AdminSettings
     show_reblogs_in_public_timelines
     show_replies_in_public_timelines
     trends
-    trends_as_landing_page
     trendable_by_default
     trending_status_cw
     show_domain_blocks
     show_domain_blocks_rationale
+    allow_referrer_origin
     noindex
     outgoing_spoilers
     require_invite_text
@@ -46,15 +45,23 @@ class Form::AdminSettings
     authorized_fetch
     app_icon
     favicon
+    min_age
+    local_live_feed_access
+    remote_live_feed_access
+    local_topic_feed_access
+    remote_topic_feed_access
+    landing_page
   ).freeze
 
   INTEGER_KEYS = %i(
     media_cache_retention_period
     content_cache_retention_period
     backups_retention_period
+    min_age
   ).freeze
 
   BOOLEAN_KEYS = %i(
+    allow_referrer_origin
     timeline_preview
     activity_api_enabled
     peers_api_enabled
@@ -64,7 +71,6 @@ class Form::AdminSettings
     show_reblogs_in_public_timelines
     show_replies_in_public_timelines
     trends
-    trends_as_landing_page
     trendable_by_default
     trending_status_cw
     noindex
@@ -84,24 +90,39 @@ class Form::AdminSettings
     flavour_and_skin
   ).freeze
 
+  DIGEST_KEYS = %i(
+    custom_css
+  ).freeze
+
   OVERRIDEN_SETTINGS = {
     authorized_fetch: :authorized_fetch_mode?,
   }.freeze
 
   DESCRIPTION_LIMIT = 200
+  DOMAIN_BLOCK_AUDIENCES = %w(disabled users all).freeze
+  REGISTRATION_MODES = %w(open approved none).freeze
+  FEED_ACCESS_MODES = %w(public authenticated disabled).freeze
+  ALTERNATE_FEED_ACCESS_MODES = %w(public authenticated).freeze
+  LANDING_PAGE = %w(trends about local_feed).freeze
 
   attr_accessor(*KEYS)
 
-  validates :registrations_mode, inclusion: { in: %w(open approved none) }, if: -> { defined?(@registrations_mode) }
+  validates :registrations_mode, inclusion: { in: REGISTRATION_MODES }, if: -> { defined?(@registrations_mode) }
   validates :site_contact_email, :site_contact_username, presence: true, if: -> { defined?(@site_contact_username) || defined?(@site_contact_email) }
   validates :site_contact_username, existing_username: true, if: -> { defined?(@site_contact_username) }
   validates :bootstrap_timeline_accounts, existing_username: { multiple: true }, if: -> { defined?(@bootstrap_timeline_accounts) }
-  validates :show_domain_blocks, inclusion: { in: %w(disabled users all) }, if: -> { defined?(@show_domain_blocks) }
-  validates :show_domain_blocks_rationale, inclusion: { in: %w(disabled users all) }, if: -> { defined?(@show_domain_blocks_rationale) }
+  validates :show_domain_blocks, inclusion: { in: DOMAIN_BLOCK_AUDIENCES }, if: -> { defined?(@show_domain_blocks) }
+  validates :show_domain_blocks_rationale, inclusion: { in: DOMAIN_BLOCK_AUDIENCES }, if: -> { defined?(@show_domain_blocks_rationale) }
+  validates :local_live_feed_access, inclusion: { in: FEED_ACCESS_MODES }, if: -> { defined?(@local_live_feed_access) }
+  validates :remote_live_feed_access, inclusion: { in: FEED_ACCESS_MODES }, if: -> { defined?(@remote_live_feed_access) }
+  validates :local_topic_feed_access, inclusion: { in: ALTERNATE_FEED_ACCESS_MODES }, if: -> { defined?(@local_topic_feed_access) }
+  validates :remote_topic_feed_access, inclusion: { in: FEED_ACCESS_MODES }, if: -> { defined?(@remote_topic_feed_access) }
   validates :media_cache_retention_period, :content_cache_retention_period, :backups_retention_period, numericality: { only_integer: true }, allow_blank: true, if: -> { defined?(@media_cache_retention_period) || defined?(@content_cache_retention_period) || defined?(@backups_retention_period) }
+  validates :min_age, numericality: { only_integer: true }, allow_blank: true, if: -> { defined?(@min_age) }
   validates :site_short_description, length: { maximum: DESCRIPTION_LIMIT }, if: -> { defined?(@site_short_description) }
   validates :status_page_url, url: true, allow_blank: true
   validate :validate_site_uploads
+  validates :landing_page, inclusion: { in: LANDING_PAGE }, if: -> { defined?(@landing_page) }
 
   KEYS.each do |key|
     define_method(key) do
@@ -137,6 +158,8 @@ class Form::AdminSettings
     KEYS.each do |key|
       next if PSEUDO_KEYS.include?(key) || !instance_variable_defined?(:"@#{key}")
 
+      cache_digest_value(key) if DIGEST_KEYS.include?(key)
+
       if UPLOAD_KEYS.include?(key)
         public_send(key).save
       else
@@ -155,6 +178,18 @@ class Form::AdminSettings
   end
 
   private
+
+  def cache_digest_value(key)
+    Rails.cache.delete(:"setting_digest_#{key}")
+
+    key_value = instance_variable_get(:"@#{key}")
+    if key_value.present?
+      Rails.cache.write(
+        :"setting_digest_#{key}",
+        Digest::SHA256.hexdigest(key_value)
+      )
+    end
+  end
 
   def typecast_value(key, value)
     if BOOLEAN_KEYS.include?(key)

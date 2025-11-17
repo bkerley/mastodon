@@ -5,10 +5,10 @@ import { throttle } from 'lodash';
 
 import api from 'flavours/glitch/api';
 import { browserHistory } from 'flavours/glitch/components/router';
+import { countableText } from 'flavours/glitch/features/compose/util/counter';
 import { search as emojiSearch } from 'flavours/glitch/features/emoji/emoji_mart_search_light';
 import { tagHistory } from 'flavours/glitch/settings';
 import { recoverHashtags } from 'flavours/glitch/utils/hashtag';
-import resizeImage from 'flavours/glitch/utils/resize_image';
 
 import { showAlert, showAlertForError } from './alerts';
 import { useEmoji } from './emojis';
@@ -58,7 +58,6 @@ export const COMPOSE_ADVANCED_OPTIONS_CHANGE = 'COMPOSE_ADVANCED_OPTIONS_CHANGE'
 export const COMPOSE_SENSITIVITY_CHANGE  = 'COMPOSE_SENSITIVITY_CHANGE';
 export const COMPOSE_SPOILERNESS_CHANGE  = 'COMPOSE_SPOILERNESS_CHANGE';
 export const COMPOSE_SPOILER_TEXT_CHANGE = 'COMPOSE_SPOILER_TEXT_CHANGE';
-export const COMPOSE_VISIBILITY_CHANGE   = 'COMPOSE_VISIBILITY_CHANGE';
 export const COMPOSE_COMPOSING_CHANGE    = 'COMPOSE_COMPOSING_CHANGE';
 export const COMPOSE_CONTENT_TYPE_CHANGE = 'COMPOSE_CONTENT_TYPE_CHANGE';
 export const COMPOSE_LANGUAGE_CHANGE     = 'COMPOSE_LANGUAGE_CHANGE';
@@ -90,9 +89,11 @@ export const COMPOSE_FOCUS = 'COMPOSE_FOCUS';
 const messages = defineMessages({
   uploadErrorLimit: { id: 'upload_error.limit', defaultMessage: 'File upload limit exceeded.' },
   uploadErrorPoll:  { id: 'upload_error.poll', defaultMessage: 'File upload not allowed with polls.' },
+  uploadQuote: { id: 'upload_error.quote', defaultMessage: 'File upload not allowed with quotes.' },
   open: { id: 'compose.published.open', defaultMessage: 'Open' },
   published: { id: 'compose.published.body', defaultMessage: 'Post published.' },
   saved: { id: 'compose.saved.body', defaultMessage: 'Post saved.' },
+  blankPostError: { id: 'compose.error.blank_post', defaultMessage: 'Post can\'t be blank.' },
 });
 
 export const ensureComposeIsVisible = (getState) => {
@@ -102,13 +103,18 @@ export const ensureComposeIsVisible = (getState) => {
 };
 
 export function setComposeToStatus(status, text, spoiler_text, content_type) {
-  return{
-    type: COMPOSE_SET_STATUS,
-    status,
-    text,
-    spoiler_text,
-    content_type,
-  };
+  return (dispatch, getState) => {
+    const maxOptions = getState().server.getIn(['server', 'configuration', 'polls', 'max_options']);
+
+    dispatch({
+      type: COMPOSE_SET_STATUS,
+      status,
+      text,
+      spoiler_text,
+      content_type,
+      maxOptions,
+    });
+  }
 }
 
 export function changeCompose(text) {
@@ -155,7 +161,7 @@ export function resetCompose() {
   };
 }
 
-export const focusCompose = (defaultText) => (dispatch, getState) => {
+export const focusCompose = (defaultText = '') => (dispatch, getState) => {
   dispatch({
     type: COMPOSE_FOCUS,
     defaultText,
@@ -192,15 +198,33 @@ export function directCompose(account) {
   };
 }
 
-export function submitCompose(overridePrivacy = null) {
+/**
+ * @callback ComposeSuccessCallback
+ * @param {Object} status
+ */
+
+/**
+ * @param {null | string} overridePrivacy
+ * @param {undefined | ComposeSuccessCallback} successCallback
+ */
+export function submitCompose(overridePrivacy = null, successCallback = undefined) {
   return function (dispatch, getState) {
     let status     = getState().getIn(['compose', 'text'], '');
     const media    = getState().getIn(['compose', 'media_attachments']);
     const statusId = getState().getIn(['compose', 'id'], null);
+    const hasQuote = !!getState().getIn(['compose', 'quoted_status_id']);
     const spoilers = getState().getIn(['compose', 'spoiler']) || getState().getIn(['local_settings', 'always_show_spoilers_field']);
-    let spoilerText = spoilers ? getState().getIn(['compose', 'spoiler_text'], '') : '';
+    const spoiler_text = spoilers ? getState().getIn(['compose', 'spoiler_text'], '') : '';
 
-    if ((!status || !status.length) && media.size === 0) {
+    const fulltext = `${spoiler_text ?? ''}${countableText(status ?? '')}`;
+    const hasText = fulltext.trim().length > 0;
+
+    if (!(hasText || media.size !== 0 || (hasQuote && spoiler_text?.length))) {
+      dispatch(showAlert({
+        message: messages.blankPostError,
+      }));
+      dispatch(focusCompose());
+
       return;
     }
 
@@ -230,20 +254,23 @@ export function submitCompose(overridePrivacy = null) {
       });
     }
 
+    const visibility = overridePrivacy || getState().getIn(['compose', 'privacy']);
     api().request({
       url: statusId === null ? '/api/v1/statuses' : `/api/v1/statuses/${statusId}`,
       method: statusId === null ? 'post' : 'put',
       data: {
         status,
+        spoiler_text,
         content_type: getState().getIn(['compose', 'content_type']),
         in_reply_to_id: getState().getIn(['compose', 'in_reply_to'], null),
         media_ids: media.map(item => item.get('id')),
         media_attributes,
-        sensitive: getState().getIn(['compose', 'sensitive']) || (spoilerText.length > 0 && media.size !== 0),
-        spoiler_text: spoilerText,
-        visibility: overridePrivacy || getState().getIn(['compose', 'privacy']),
+        sensitive: getState().getIn(['compose', 'sensitive']) || (spoiler_text.length > 0 && media.size !== 0),
+        visibility: visibility,
         poll: getState().getIn(['compose', 'poll'], null),
         language: getState().getIn(['compose', 'language']),
+        quoted_status_id: getState().getIn(['compose', 'quoted_status_id']),
+        quote_approval_policy: visibility === 'private' || visibility === 'direct' ? 'nobody' : getState().getIn(['compose', 'quote_policy']),
       },
       headers: {
         'Idempotency-Key': getState().getIn(['compose', 'idempotencyKey']),
@@ -257,6 +284,9 @@ export function submitCompose(overridePrivacy = null) {
 
       dispatch(insertIntoTagHistory(response.data.tags, status));
       dispatch(submitComposeSuccess({ ...response.data }));
+      if (typeof successCallback === 'function') {
+        successCallback(response.data);
+      }
 
       // To make the app more responsive, immediately push the status
       // into the columns
@@ -328,6 +358,11 @@ export function doodleSet(options) {
 
 export function uploadCompose(files) {
   return function (dispatch, getState) {
+    // Exit if there's a quote.
+    if (getState().compose.get('quoted_status_id')) {
+      dispatch(showAlert({ message: messages.uploadQuote }));
+      return;
+    }
     const uploadLimit = getState().getIn(['server', 'server', 'configuration', 'statuses', 'max_media_attachments']);
     const media = getState().getIn(['compose', 'media_attachments']);
     const pending = getState().getIn(['compose', 'pending_media_attachments']);
@@ -347,46 +382,42 @@ export function uploadCompose(files) {
 
     dispatch(uploadComposeRequest());
 
-    for (const [i, f] of Array.from(files).entries()) {
+    for (const [i, file] of Array.from(files).entries()) {
       if (media.size + i > (uploadLimit - 1)) break;
 
-      resizeImage(f).then(file => {
-        const data = new FormData();
-        data.append('file', file);
-        // Account for disparity in size of original image and resized data
-        total += file.size - f.size;
+      const data = new FormData();
+      data.append('file', file);
 
-        return api().post('/api/v2/media', data, {
-          onUploadProgress: function({ loaded }){
-            progress[i] = loaded;
-            dispatch(uploadComposeProgress(progress.reduce((a, v) => a + v, 0), total));
-          },
-        }).then(({ status, data }) => {
-          // If server-side processing of the media attachment has not completed yet,
-          // poll the server until it is, before showing the media attachment as uploaded
+      api().post('/api/v2/media', data, {
+        onUploadProgress: function({ loaded }){
+          progress[i] = loaded;
+          dispatch(uploadComposeProgress(progress.reduce((a, v) => a + v, 0), total));
+        },
+      }).then(({ status, data }) => {
+        // If server-side processing of the media attachment has not completed yet,
+        // poll the server until it is, before showing the media attachment as uploaded
 
-          if (status === 200) {
-            dispatch(uploadComposeSuccess(data, f));
-          } else if (status === 202) {
-            dispatch(uploadComposeProcessing());
+        if (status === 200) {
+          dispatch(uploadComposeSuccess(data, file));
+        } else if (status === 202) {
+          dispatch(uploadComposeProcessing());
 
-            let tryCount = 1;
+          let tryCount = 1;
 
-            const poll = () => {
-              api().get(`/api/v1/media/${data.id}`).then(response => {
-                if (response.status === 200) {
-                  dispatch(uploadComposeSuccess(response.data, f));
-                } else if (response.status === 206) {
-                  const retryAfter = (Math.log2(tryCount) || 1) * 1000;
-                  tryCount += 1;
-                  setTimeout(() => poll(), retryAfter);
-                }
-              }).catch(error => dispatch(uploadComposeFail(error)));
-            };
+          const poll = () => {
+            api().get(`/api/v1/media/${data.id}`).then(response => {
+              if (response.status === 200) {
+                dispatch(uploadComposeSuccess(response.data, file));
+              } else if (response.status === 206) {
+                const retryAfter = (Math.log2(tryCount) || 1) * 1000;
+                tryCount += 1;
+                setTimeout(() => poll(), retryAfter);
+              }
+            }).catch(error => dispatch(uploadComposeFail(error)));
+          };
 
-            poll();
-          }
-        });
+          poll();
+        }
       }).catch(error => dispatch(uploadComposeFail(error)));
     }
   };
@@ -448,7 +479,7 @@ export function initMediaEditModal(id) {
 
     dispatch(openModal({
       modalType: 'FOCAL_POINT',
-      modalProps: { id },
+      modalProps: { mediaId: id },
     }));
   };
 }
@@ -636,6 +667,7 @@ export function fetchComposeSuggestions(token) {
       fetchComposeSuggestionsEmojis(dispatch, getState, token);
       break;
     case '#':
+    case '＃':
       fetchComposeSuggestionsTags(dispatch, getState, token);
       break;
     default:
@@ -677,11 +709,11 @@ export function selectComposeSuggestion(position, token, suggestion, path) {
 
       dispatch(useEmoji(suggestion));
     } else if (suggestion.type === 'hashtag') {
-      completion    = `#${suggestion.name}`;
-      startPosition = position - 1;
+      completion    = suggestion.name.slice(token.length - 1);
+      startPosition = position + token.length;
     } else if (suggestion.type === 'account') {
-      completion    = getState().getIn(['accounts', suggestion.id, 'acct']);
-      startPosition = position;
+      completion    = `@${getState().getIn(['accounts', suggestion.id, 'acct'])}`;
+      startPosition = position - 1;
     }
 
     // We don't want to replace hashtags that vary only in case due to accessibility, but we need to fire off an event so that
@@ -789,13 +821,6 @@ export function changeComposeSpoilerText(text) {
   return {
     type: COMPOSE_SPOILER_TEXT_CHANGE,
     text,
-  };
-}
-
-export function changeComposeVisibility(value) {
-  return {
-    type: COMPOSE_VISIBILITY_CHANGE,
-    value,
   };
 }
 

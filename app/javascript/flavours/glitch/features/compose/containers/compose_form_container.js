@@ -1,8 +1,4 @@
-import { defineMessages, injectIntl } from 'react-intl';
-
 import { connect } from 'react-redux';
-
-import { privacyPreference } from 'flavours/glitch/utils/privacy_preference';
 
 import {
   changeCompose,
@@ -13,33 +9,21 @@ import {
   changeComposeSpoilerText,
   insertEmojiCompose,
   uploadCompose,
-} from '../../../actions/compose';
-import { changeLocalSetting } from '../../../actions/local_settings';
-import {
-  openModal,
-} from '../../../actions/modal';
+} from 'flavours/glitch/actions/compose';
+import { pasteLinkCompose } from 'flavours/glitch/actions/compose_typed';
+import { openModal } from 'flavours/glitch/actions/modal';
+import { PRIVATE_QUOTE_MODAL_ID } from 'flavours/glitch/features/ui/components/confirmation_modals/private_quote_notify';
+import { privacyPreference } from 'flavours/glitch/utils/privacy_preference';
+
 import ComposeForm from '../components/compose_form';
 
-const messages = defineMessages({
-  missingDescriptionMessage: {
-    id: 'confirmations.missing_media_description.message',
-    defaultMessage: 'At least one media attachment is lacking a description. Consider describing all media attachments for the visually impaired before sending your toot.',
-  },
-  missingDescriptionConfirm: {
-    id: 'confirmations.missing_media_description.confirm',
-    defaultMessage: 'Send anyway',
-  },
-  missingDescriptionEdit: {
-    id: 'confirmations.missing_media_description.edit',
-    defaultMessage: 'Edit media',
-  },
-});
+const urlLikeRegex = /^https?:\/\/[^\s]+\/[^\s]+$/i;
 
 const sideArmPrivacy = state => {
   const inReplyTo = state.getIn(['compose', 'in_reply_to']);
   const replyPrivacy = inReplyTo ? state.getIn(['statuses', inReplyTo, 'visibility']) : null;
   const sideArmBasePrivacy = state.getIn(['local_settings', 'side_arm']);
-  const sideArmRestrictedPrivacy = replyPrivacy ? privacyPreference(replyPrivacy, sideArmBasePrivacy) : null;
+  const sideArmRestrictedPrivacy = replyPrivacy && sideArmBasePrivacy !== 'none' ? privacyPreference(replyPrivacy, sideArmBasePrivacy) : null;
   let sideArmPrivacy = null;
   switch (state.getIn(['local_settings', 'side_arm_reply_mode'])) {
   case 'copy':
@@ -68,22 +52,42 @@ const mapStateToProps = state => ({
   isChangingUpload: state.getIn(['compose', 'is_changing_upload']),
   isUploading: state.getIn(['compose', 'is_uploading']),
   anyMedia: state.getIn(['compose', 'media_attachments']).size > 0,
+  missingAltText: state.getIn(['compose', 'media_attachments']).some(media => ['image', 'gifv'].includes(media.get('type')) && (media.get('description') ?? '').length === 0),
+  quoteToPrivate:
+    !!state.getIn(['compose', 'quoted_status_id'])
+    && state.getIn(['compose', 'privacy']) === 'private'
+    && !state.getIn(['settings', 'dismissed_banners', PRIVATE_QUOTE_MODAL_ID]),
   isInReply: state.getIn(['compose', 'in_reply_to']) !== null,
   lang: state.getIn(['compose', 'language']),
   sideArm: sideArmPrivacy(state),
   media: state.getIn(['compose', 'media_attachments']),
-  mediaDescriptionConfirmation: state.getIn(['local_settings', 'confirm_missing_media_description']),
   maxChars: state.getIn(['server', 'server', 'configuration', 'statuses', 'max_characters'], 500),
 });
 
-const mapDispatchToProps = (dispatch, { intl }) => ({
+const mapDispatchToProps = (dispatch, props) => ({
 
   onChange (text) {
     dispatch(changeCompose(text));
   },
 
-  onSubmit (overridePrivacy = null) {
-    dispatch(submitCompose(overridePrivacy));
+  onSubmit ({ missingAltText, quoteToPrivate, overridePrivacy = null }) {
+    if (missingAltText) {
+      dispatch(openModal({
+        modalType: 'CONFIRM_MISSING_ALT_TEXT',
+        modalProps: { overridePrivacy },
+      }));
+    } else if (quoteToPrivate) {
+      dispatch(openModal({
+        modalType: 'CONFIRM_PRIVATE_QUOTE_NOTIFY',
+        modalProps: {},
+      }));
+    } else {
+      dispatch(submitCompose(overridePrivacy, (status) => {
+        if (props.redirectOnSuccess) {
+          window.location.assign(status.url);
+        }
+      }));
+    }
   },
 
   onClearSuggestions () {
@@ -102,33 +106,27 @@ const mapDispatchToProps = (dispatch, { intl }) => ({
     dispatch(changeComposeSpoilerText(checked));
   },
 
-  onPaste (files) {
-    dispatch(uploadCompose(files));
+  onPaste (e) {
+    if (e.clipboardData && e.clipboardData.files.length === 1) {
+      dispatch(uploadCompose(e.clipboardData.files));
+      e.preventDefault();
+    } else if (e.clipboardData && e.clipboardData.files.length === 0) {
+      const data = e.clipboardData.getData('text/plain');
+      if (!data.match(urlLikeRegex)) return;
+
+      try {
+        const url = new URL(data);
+        dispatch(pasteLinkCompose({ url }));
+      } catch {
+        return;
+      }
+    }
   },
 
   onPickEmoji (position, data, needsSpace) {
     dispatch(insertEmojiCompose(position, data, needsSpace));
   },
 
-  onMediaDescriptionConfirm (mediaId, overridePrivacy = null) {
-    dispatch(openModal({
-      modalType: 'CONFIRM',
-      modalProps: {
-        message: intl.formatMessage(messages.missingDescriptionMessage),
-        confirm: intl.formatMessage(messages.missingDescriptionConfirm),
-        onConfirm: () => {
-          dispatch(submitCompose(overridePrivacy));
-        },
-        secondary: intl.formatMessage(messages.missingDescriptionEdit),
-        onSecondary: () => dispatch(openModal({
-          modalType: 'FOCAL_POINT',
-          modalProps: { id: mediaId },
-        })),
-        onDoNotAsk: () => dispatch(changeLocalSetting(['confirm_missing_media_description'], false)),
-      },
-    }));
-  },
-
 });
 
-export default injectIntl(connect(mapStateToProps, mapDispatchToProps)(ComposeForm));
+export default connect(mapStateToProps, mapDispatchToProps)(ComposeForm);

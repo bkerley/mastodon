@@ -2,10 +2,13 @@ import { useCallback, useEffect } from 'react';
 
 import { useIntl, defineMessages } from 'react-intl';
 
+import classNames from 'classnames';
+
 import { useIdentity } from '@/flavours/glitch/identity_context';
 import {
   fetchRelationships,
   followAccount,
+  unmuteAccount,
 } from 'flavours/glitch/actions/accounts';
 import { openModal } from 'flavours/glitch/actions/modal';
 import { Button } from 'flavours/glitch/components/button';
@@ -13,16 +16,50 @@ import { LoadingIndicator } from 'flavours/glitch/components/loading_indicator';
 import { me } from 'flavours/glitch/initial_state';
 import { useAppDispatch, useAppSelector } from 'flavours/glitch/store';
 
-const messages = defineMessages({
+import { useBreakpoint } from '../features/ui/hooks/useBreakpoint';
+
+const longMessages = defineMessages({
   unfollow: { id: 'account.unfollow', defaultMessage: 'Unfollow' },
+  unblock: { id: 'account.unblock_short', defaultMessage: 'Unblock' },
+  unmute: { id: 'account.unmute_short', defaultMessage: 'Unmute' },
   follow: { id: 'account.follow', defaultMessage: 'Follow' },
   followBack: { id: 'account.follow_back', defaultMessage: 'Follow back' },
+  followRequest: {
+    id: 'account.follow_request',
+    defaultMessage: 'Request to follow',
+  },
+  followRequestCancel: {
+    id: 'account.follow_request_cancel',
+    defaultMessage: 'Cancel request',
+  },
   edit_profile: { id: 'account.edit_profile', defaultMessage: 'Edit profile' },
 });
 
+const shortMessages = {
+  ...longMessages, // Align type signature of shortMessages and longMessages
+  ...defineMessages({
+    followBack: {
+      id: 'account.follow_back_short',
+      defaultMessage: 'Follow back',
+    },
+    followRequest: {
+      id: 'account.follow_request_short',
+      defaultMessage: 'Request',
+    },
+    followRequestCancel: {
+      id: 'account.follow_request_cancel_short',
+      defaultMessage: 'Cancel',
+    },
+    editProfile: { id: 'account.edit_profile_short', defaultMessage: 'Edit' },
+  }),
+};
+
 export const FollowButton: React.FC<{
   accountId?: string;
-}> = ({ accountId }) => {
+  compact?: boolean;
+  labelLength?: 'auto' | 'short' | 'long';
+  className?: string;
+}> = ({ accountId, compact, labelLength = 'auto', className }) => {
   const intl = useIntl();
   const dispatch = useAppDispatch();
   const { signedIn } = useIdentity();
@@ -46,7 +83,6 @@ export const FollowButton: React.FC<{
         openModal({
           modalType: 'INTERACTION',
           modalProps: {
-            type: 'follow',
             accountId: accountId,
             url: account?.url,
           },
@@ -54,33 +90,64 @@ export const FollowButton: React.FC<{
       );
     }
 
-    if (!relationship) return;
+    if (!relationship || !accountId) return;
 
     if (accountId === me) {
       return;
-    } else if (account && (relationship.following || relationship.requested)) {
+    } else if (relationship.muting) {
+      dispatch(unmuteAccount(accountId));
+    } else if (account && relationship.following) {
       dispatch(
         openModal({ modalType: 'CONFIRM_UNFOLLOW', modalProps: { account } }),
+      );
+    } else if (account && relationship.requested) {
+      dispatch(
+        openModal({
+          modalType: 'CONFIRM_WITHDRAW_REQUEST',
+          modalProps: { account },
+        }),
+      );
+    } else if (relationship.blocking) {
+      dispatch(
+        openModal({
+          modalType: 'CONFIRM_UNBLOCK',
+          modalProps: { account },
+        }),
       );
     } else {
       dispatch(followAccount(accountId));
     }
   }, [dispatch, accountId, relationship, account, signedIn]);
 
+  const isNarrow = useBreakpoint('narrow');
+  const useShortLabel =
+    labelLength === 'short' || (labelLength === 'auto' && isNarrow);
+  const messages = useShortLabel ? shortMessages : longMessages;
+
+  const followMessage = account?.locked
+    ? messages.followRequest
+    : messages.follow;
+
   let label;
 
   if (!signedIn) {
-    label = intl.formatMessage(messages.follow);
+    label = intl.formatMessage(followMessage);
   } else if (accountId === me) {
     label = intl.formatMessage(messages.edit_profile);
   } else if (!relationship) {
     label = <LoadingIndicator />;
-  } else if (!relationship.following && relationship.followed_by) {
-    label = intl.formatMessage(messages.followBack);
-  } else if (relationship.following || relationship.requested) {
+  } else if (relationship.muting) {
+    label = intl.formatMessage(messages.unmute);
+  } else if (relationship.following) {
     label = intl.formatMessage(messages.unfollow);
+  } else if (relationship.blocking) {
+    label = intl.formatMessage(messages.unblock);
+  } else if (relationship.requested) {
+    label = intl.formatMessage(messages.followRequestCancel);
+  } else if (relationship.followed_by && !account?.locked) {
+    label = intl.formatMessage(messages.followBack);
   } else {
-    label = intl.formatMessage(messages.follow);
+    label = intl.formatMessage(followMessage);
   }
 
   if (accountId === me) {
@@ -88,8 +155,10 @@ export const FollowButton: React.FC<{
       <a
         href='/settings/profile'
         target='_blank'
-        rel='noreferrer noopener'
-        className='button button-secondary'
+        rel='noopener'
+        className={classNames(className, 'button button-secondary', {
+          'button--compact': compact,
+        })}
       >
         {label}
       </a>
@@ -99,9 +168,14 @@ export const FollowButton: React.FC<{
   return (
     <Button
       onClick={handleClick}
-      disabled={relationship?.blocked_by || relationship?.blocking}
+      disabled={
+        relationship?.blocked_by ||
+        (!(relationship?.following || relationship?.requested) &&
+          (account?.suspended || !!account?.moved))
+      }
       secondary={following}
-      className={following ? 'button--destructive' : undefined}
+      compact={compact}
+      className={classNames(className, { 'button--destructive': following })}
     >
       {label}
     </Button>

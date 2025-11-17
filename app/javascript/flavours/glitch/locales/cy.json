@@ -6,18 +6,12 @@
   "account.view_full_profile": "Dangos proffil cyfan",
   "boost_modal.missing_description": "Mae'r tŵt yma'n cynnwys ychydig gyfryngau heb ddisgrifiad",
   "column.favourited_by": "Wedi'i hoffi gan",
-  "column.heading": "Misg",
   "column.reblogged_by": "Wedi'i bŵstio gan",
-  "column.subheading": "Opsiynnau arall",
   "column_header.profile": "Proffil",
-  "column_subheading.lists": "Rhestri",
-  "column_subheading.navigation": "Llywio",
   "community.column_settings.allow_local_only": "Dangos tŵtiau lleol yn unig",
   "compose.content-type.html": "HTML",
   "compose.content-type.markdown": "Markdown",
   "compose.content-type.plain": "Testun plaen",
-  "confirmations.missing_media_description.confirm": "Anfon beth bynnag",
-  "confirmations.missing_media_description.edit": "Golygu cyfryngau",
   "settings.content_warnings": "Content warnings",
   "settings.preferences": "Preferences"
 }

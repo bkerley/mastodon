@@ -10,7 +10,8 @@ import { connect } from 'react-redux';
 import PublicIcon from '@/material-icons/400-24px/public.svg?react';
 import { DismissableBanner } from 'flavours/glitch/components/dismissable_banner';
 import { identityContextPropShape, withIdentity } from 'flavours/glitch/identity_context';
-import { domain } from 'flavours/glitch/initial_state';
+import { domain, localLiveFeedAccess, remoteLiveFeedAccess } from 'flavours/glitch/initial_state';
+import { canViewFeed } from 'flavours/glitch/permissions';
 
 import { addColumn, removeColumn, moveColumn } from '../../actions/columns';
 import { connectPublicStream } from '../../actions/streaming';
@@ -128,7 +129,20 @@ class PublicTimeline extends PureComponent {
 
   render () {
     const { intl, columnId, hasUnread, multiColumn, onlyMedia, onlyRemote, allowLocalOnly } = this.props;
+    const { signedIn, permissions } = this.props.identity;
     const pinned = !!columnId;
+
+    const emptyMessage = (canViewFeed(signedIn, permissions, localLiveFeedAccess) || canViewFeed(signedIn, permissions, remoteLiveFeedAccess)) ? (
+      <FormattedMessage
+        id='empty_column.public'
+        defaultMessage='There is nothing here! Write something publicly, or manually follow users from other servers to fill it up'
+      />
+    ) : (
+      <FormattedMessage
+        id='empty_column.disabled_feed'
+        defaultMessage='This feed has been disabled by your server administrators.'
+      />
+    );
 
     return (
       <Column bindToDocument={!multiColumn} ref={this.setRef} label={intl.formatMessage(messages.title)}>
@@ -147,12 +161,12 @@ class PublicTimeline extends PureComponent {
         </ColumnHeader>
 
         <StatusListContainer
-          prepend={<DismissableBanner id='public_timeline'><FormattedMessage id='dismissable_banner.public_timeline' defaultMessage='These are the most recent public posts from people on the social web that people on {domain} follow.' values={{ domain }} /></DismissableBanner>}
+          prepend={<DismissableBanner id='public_timeline'><FormattedMessage id='dismissable_banner.public_timeline' defaultMessage='These are the most recent public posts from people on the fediverse that people on {domain} follow.' values={{ domain }} /></DismissableBanner>}
           timelineId={`public${onlyRemote ? ':remote' : (allowLocalOnly ? ':allow_local_only' : '')}${onlyMedia ? ':media' : ''}`}
           onLoadMore={this.handleLoadMore}
           trackScroll={!pinned}
           scrollKey={`public_timeline-${columnId}`}
-          emptyMessage={<FormattedMessage id='empty_column.public' defaultMessage='There is nothing here! Write something publicly, or manually follow users from other servers to fill it up' />}
+          emptyMessage={emptyMessage}
           bindToDocument={!multiColumn}
           regex={this.props.regex}
         />
